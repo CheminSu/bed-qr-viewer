@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BED QR Viewer (GRCh37 / hg19)</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273449;
+    --border: #334155;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-2: #818cf8;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+    --err: #ef4444;
+    --ucsc: #2563eb;
+    --clingen: #16a34a;
+    --decipher: #db2777;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+      "Yu Gothic UI", Meiryo, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    padding: 24px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  header h1 .badge {
+    display: inline-block;
+    margin-left: 12px;
+    padding: 3px 10px;
+    background: var(--accent);
+    color: #082f49;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    vertical-align: middle;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  main {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 32px 64px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 920px) {
+    main { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .panel h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tab {
+    padding: 10px 16px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 14px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab:hover:not(.active) {
+    color: var(--text);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  #qr-reader {
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+  }
+  #qr-reader video, #qr-reader img { border-radius: 8px; }
+  #qr-reader__dashboard_section_csr button,
+  #qr-reader__dashboard_section_swaplink {
+    background: var(--panel-2) !important;
+    color: var(--text) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
+    padding: 6px 12px !important;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 180px;
+    padding: 12px;
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 12px; }
+
+  button.btn {
+    padding: 9px 16px;
+    background: var(--accent);
+    color: #082f49;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.05s;
+  }
+  button.btn:hover { opacity: 0.9; }
+  button.btn:active { transform: translateY(1px); }
+  button.btn.ghost {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.btn.danger {
+    background: var(--err);
+    color: white;
+  }
+  input[type="file"] {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .status {
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-top: 12px;
+  }
+  .status.ok { background: rgba(34, 197, 94, 0.12); color: #4ade80; border-left: 3px solid var(--ok); }
+  .status.warn { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border-left: 3px solid var(--warn); }
+  .status.err { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border-left: 3px solid var(--err); }
+
+  .results {
+    grid-column: 1 / -1;
+  }
+  .results-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .results-head h2 { margin: 0; }
+  .meta {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead th {
+    text-align: left;
+    padding: 10px 8px;
+    background: var(--panel-2);
+    color: var(--accent);
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+  }
+  tbody td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:hover { background: rgba(255, 255, 255, 0.02); }
+  td.coord {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #a5f3fc;
+    white-space: nowrap;
+  }
+  td.size {
+    font-family: ui-monospace, monospace;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+  }
+  td.name {
+    font-weight: 500;
+    color: #fde68a;
+  }
+
+  .link-btn {
+    display: inline-block;
+    padding: 5px 10px;
+    margin: 2px 3px 2px 0;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    color: white;
+    text-decoration: none;
+    transition: opacity 0.15s;
+    border: none;
+    cursor: pointer;
+  }
+  .link-btn:hover { opacity: 0.85; }
+  .link-btn.ucsc { background: var(--ucsc); }
+  .link-btn.clingen { background: var(--clingen); }
+  .link-btn.decipher { background: var(--decipher); }
+  .link-btn.disabled {
+    background: #475569;
+    cursor: not-allowed;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  .openall-bar {
+    margin-top: 14px;
+    padding: 12px;
+    background: var(--panel-2);
+    border-radius: 8px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .openall-bar span { color: var(--muted); font-size: 13px; margin-right: auto; }
+
+  .empty {
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  details { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  details summary { cursor: pointer; }
+  code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+  }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 16px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧬 BED QR Viewer <span class="badge">GRCh37 / hg19</span></h1>
+  <div class="sub">QRコードからBEDファイルを読み取り、UCSC / ClinGen / DECIPHER で表示</div>
+</header>
+
+<main>
+  <!-- LEFT: Input -->
+  <section class="panel">
+    <h2>1. 入力</h2>
+    <div class="tabs">
+      <button class="tab active" data-tab="camera">📷 カメラ</button>
+      <button class="tab" data-tab="image">🖼️ 画像</button>
+      <button class="tab" data-tab="text">📝 テキスト</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-camera">
+      <div id="qr-reader"></div>
+      <div class="row" style="margin-top: 10px;">
+        <button class="btn ghost" id="btnStartCam">スキャン開始</button>
+        <button class="btn ghost" id="btnStopCam">停止</button>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-image">
+      <input type="file" id="fileImg" accept="image/*">
+      <div class="status warn" style="margin-top:10px;">QRコードが鮮明に写った画像を選択してください。</div>
+    </div>
+
+    <div class="tab-panel" id="tab-text">
+      <textarea id="bedText" placeholder="chr2&#9;192983874&#9;200455593&#9;SATB2_REGION
+chr7&#9;117120016&#9;117308718&#9;CFTR
+chr17&#9;41196311&#9;41277500&#9;BRCA1"></textarea>
+      <div class="row">
+        <button class="btn" id="btnParseText">読み込み</button>
+        <button class="btn ghost" id="btnSample">サンプル</button>
+      </div>
+    </div>
+
+    <div id="status"></div>
+  </section>
+
+  <!-- RIGHT: How to -->
+  <section class="panel">
+    <h2>2. 使い方</h2>
+    <ol style="line-height:1.8; font-size:14px; padding-left: 18px;">
+      <li>左側でQRコードを読み込むか、BEDテキストを貼り付け</li>
+      <li>下の表に各リージョンが一覧表示されます</li>
+      <li>各行の <span class="link-btn ucsc">UCSC</span> <span class="link-btn clingen">ClinGen</span> <span class="link-btn decipher">DECIPHER</span> ボタンで該当データベースの該当領域を新しいタブで開きます</li>
+    </ol>
+    <details>
+      <summary>BED フォーマットについて</summary>
+      <div style="margin-top:8px; line-height:1.7;">
+        タブまたはスペース区切り。最低3列（<code>chrom start end</code>）必要、4列目があれば <code>name</code>（表示用ラベル）。<br>
+        BEDの座標は 0-based half-open。本アプリでは表示・リンクともに 1-based closed に変換します。<br>
+        <code>track</code>/<code>browser</code> 行と <code>#</code> コメント行は無視されます。
+      </div>
+    </details>
+    <details>
+      <summary>リンク先の仕様</summary>
+      <div style="margin-top:8px; line-height:1.7;">
+        ・UCSC: <code>db=hg19&amp;position=chrN:start-end</code><br>
+        ・ClinGen Gene Dosage: GRCh37 座標文字列 <code>chrN:start-end</code> を <code>search=</code> に設定<br>
+        ・DECIPHER: <code>browser#q/grch37:N:start-end</code>
+      </div>
+    </details>
+  </section>
+
+  <!-- BOTTOM: Results -->
+  <section class="panel results">
+    <div class="results-head">
+      <h2>3. リージョン一覧</h2>
+      <div class="meta" id="meta">未読み込み</div>
+    </div>
+    <div id="resultsBody">
+      <div class="empty">QRコードを読み込むか、BEDテキストを入力してください。</div>
+    </div>
+    <div class="openall-bar" id="openallBar" style="display:none;">
+      <span>全リージョンを一括で開く（タブが大量に開きます。ブラウザのポップアップ許可が必要）</span>
+      <button class="btn ghost" data-openall="ucsc">UCSC 全部</button>
+      <button class="btn ghost" data-openall="clingen">ClinGen 全部</button>
+      <button class="btn ghost" data-openall="decipher">DECIPHER 全部</button>
+      <button class="btn danger" id="btnClear">クリア</button>
+    </div>
+  </section>
+</main>
+
+<footer>BED QR Viewer · 座標系: GRCh37 (hg19) · QRデコード: html5-qrcode · UCSC custom session: <span id="sessionLabel">masa</span></footer>
+
+<!-- UCSC saved session (masa) — embedded raw cart dump -->
+<script type="text/plain" id="ucsc-session-masa">
+_ 1777258485307
+c chr10
+cartVersion 9
+cjCmd {"getChromName": {"searchTerm": "RT-PCR"}}
+clade mammal
+clinGenComp full
+clinGenCspec_imgOrd 7
+clinGenCspec_sel 0
+clinGenGeneDisease_imgOrd 6
+clinGenGeneDisease_sel 0
+clinGenHaplo_imgOrd 4
+clinGenTriplo_imgOrd 5
+cons100way hide
+db hg19
+dbSnp155Composite hide
+dbSnp155ViewVariants full
+dbVar_common_1000g_imgOrd 12
+dbVar_common_1000g_sel 0
+dbVar_common_african_imgOrd 13
+dbVar_common_african_sel 0
+dbVar_common_decipher_imgOrd 15
+dbVar_common_decipher_sel 0
+dbVar_common_european_imgOrd 16
+dbVar_common_european_sel 0
+dbVar_common_global_imgOrd 14
+dbVar_common_global_sel 0
+dbVar_common_gnomad_imgOrd 17
+dbVar_common_gnomad_sel 0
+dbVar_conflict_pathogenic_imgOrd 18
+dgvGold_imgOrd 4
+dgvGold_sel 0
+dgvMerged_imgOrd 6
+dgvMerged_sel 1
+dgvPlus squish
+dgvSupporting_imgOrd 5
+dgvSupporting_sel 0
+expOrder_cons100way phyloP100wayAll
+expOrder_dbSnp155Composite dbSnp155Common
+expOrder_dgvPlus dgvSupporting
+expOrder_gnomadSuper gnomadGenomesMeanCoverage gnomadExomesMeanCoverage
+expOrder_iscaComposite iscaPathGainCum iscaBenignGainCum iscaBenignLossCum
+expOrder_wgEncodeReg wgEncodeRegMarkH3k27ac
+fixSeqLiftOverPsl_imgOrd 15
+geneReviews full
+geneReviews_imgOrd 2
+genomicSuperDups squish
+genomicSuperDups_imgOrd 8
+gnomADPextmean_proportion_imgOrd 27
+gnomADPextmean_proportion_sel 0
+gnomadExomes hide
+gnomadExomesMeanCoverage_imgOrd 20
+gnomadExomesMeanCoverage_sel 0
+gnomadExomes_imgOrd 24
+gnomadGenomes hide
+gnomadGenomesMeanCoverage_imgOrd 19
+gnomadGenomesMeanCoverage_sel 0
+gnomadGenomes_imgOrd 25
+gnomadMpc hide
+gnomadMpc_imgOrd 26
+gnomadStructuralVariants squish
+gnomadSuper show
+gnomadSvFull squish
+gnomadSvFull_imgOrd 7
+gnomadSvFull_sel 1
+gtexGeneV8 hide
+gtexGeneV8_imgOrd 6
+hgnc full
+hgnc_imgOrd 1
+hgtgroup_compGeno_close 0
+hgtgroup_denisova_close 1
+hgtgroup_expression_close 0
+hgtgroup_genes_close 0
+hgtgroup_map_close 0
+hgtgroup_neandertal_close 1
+hgtgroup_phenDis_close 0
+hgtgroup_regulation_close 0
+hgtgroup_rep_close 0
+hgtgroup_rna_close 0
+hgtgroup_varRep_close 0
+hgtgroup_visible_close 0
+iscaBenignGainCum_imgOrd 7
+iscaBenignGainCum_sel 0
+iscaBenignLossCum_imgOrd 9
+iscaPathGainCum_imgOrd 8
+iscaPathGainCum_sel 0
+iscaPathLossCum_imgOrd 12
+iscaPathLossCum_sel 0
+iscaPathogenic_imgOrd 10
+iscaPathogenic_sel 0
+iscaViewDetail squish
+iscaViewTotal full
+knownGene hide
+knownGene_imgOrd 1
+multiz100way_imgOrd 9
+ncbiRefSeqCurated_imgOrd 2
+ncbiRefSeqCurated_sel 1
+omimGene2 pack
+omimGene2.label.omimId 1
+omimGene2_imgOrd 3
+org Human
+patchesPsl hide
+phyloP100wayAll_imgOrd 8
+phyloP100wayAll_sel 0
+pliByGene_imgOrd 19
+pliByGene_sel 0
+pubs hide
+pubsBlat_imgOrd 4
+pubsBlat_sel 0
+pubsMarkerSnp_imgOrd 5
+refSeqComposite hide
+refSeqComposite.label.gene 1
+rmsk hide
+rmsk_imgOrd 10
+ruler_imgOrd 0
+simOrder_cons100way phyloP100wayAll
+simOrder_dbSnp155Composite dbSnp155Common
+simOrder_dgvPlus dgvSupporting
+simOrder_gnomadSuper gnomadExomesMeanCoverage gnomadGenomesMeanCoverage
+simOrder_iscaComposite iscaPathGainCum iscaBenignGainCum iscaBenignLossCum
+simOrder_wgEncodeReg wgEncodeRegMarkH3k27ac
+textFont Helvetica
+textSize 12
+textStyle Normal
+wgEncodeReg hide
+wgEncodeRegMarkH3k27ac_imgOrd 7
+wgEncodeBroadHmm dense
+wgEncodeBroadHistone dense
+wgEncodeCaltechRnaSeq dense
+wgEncodeCshlLongRnaSeq dense
+wgEncodeGisChiaPet dense
+wgEncodeGisRnaSeq dense
+wgEncodeHaibMethylRrbs dense
+wgEncodeHaibMethyl450 dense
+wgEncodeHaibRnaSeq dense
+wgEncodeSunyAlbanyGeneSt dense
+wgEncodeSunyAlbanyTiling dense
+wgEncodeSunyRipSeq dense
+wgEncodeSydhHistone dense
+wgEncodeSydhRnaSeq dense
+wgEncodeUmassDekker5C dense
+wgEncodeUwHistone dense
+dbSnp153Composite pack
+cpgIslandExt pack
+decipher pack
+humanMethylationAtlasSummary pack
+jarvis dense
+mexbb pack
+omimContainer show
+spliceAI dense
+Enhancers dense
+lincRNAsAllCellTypeTopView dense
+enhancer_promoter_correlations_distances_cell_type squish
+robustPeaks dense
+Total_counts_multiwig full
+wgEncodeRegMarkH3k27ac full
+Max_counts_multiwig full
+affyExonArray pack
+covidHgiGwasR4Pval pack
+decipherSnvs pack
+hmc full
+humanMethylationAtlasSignals full
+covidMuts pack
+metaDome full
+wgEncodeAwgDnaseMasterSites dense
+wgEncodeAwgDnaseUniform dense
+encTfChipPk dense
+wgEncodeAwgTfbsUniform dense
+decipherPopulation pack
+TSS_activity_TPM dense
+wgEncodeOpenChromSynth dense
+sgdp pack
+knownGeneV48lift37 pack
+knownGeneV45lift37 pack
+knownGeneV47lift37 pack
+knownGeneKent pack
+mtrScores full
+linsight full
+transMapEnsemblV5 pack
+transMapRefSeqV5 pack
+wgEncodeGencodeV49lift37 pack
+tgpPhase3Accessibility pack
+tgpPhase3 pack
+abSplice dense
+augustusGene pack
+avada dense
+bayesDel full
+cadd dense
+caddDel dense
+caddIns dense
+cadd1_7 dense
+cadd1_7_Del dense
+cadd1_7_Ins dense
+cytoBandIdeo dense
+dbVar_common pack
+dbVar_conflict pack
+wgEncodeOpenChromDnase dense
+varChat dense
+gnomadPLI pack
+gnomadCoverage dense
+gnomadPext full
+lincRNAsTranscripts pack
+mcap full
+mastermind dense
+mgcFullMrna pack
+mutScore full
+orfeomeMrna pack
+prsEmerge dense
+pubtator dense
+targetScanMiRnaSitesV72 pack
+wgEncodeOpenChromFaire dense
+wgEncodeUw5C dense
+wgEncodeUwDgf dense
+wgEncodeUwDnase dense
+varaico dense
+varaicoSuppl dense
+defaultsSet on
+</script>
+
+<script>
+'use strict';
+
+// ----- UCSC saved-session loader -----
+// 除外: 座標・状態・認証・ハイライト等。トラック可視性 (full/pack/dense/squish/hide/show)
+// と *_sel / *_imgOrd / expOrder_* / simOrder_* / hgtgroup_* / textFont 等の表示設定はそのまま渡す
+const UCSC_SKIP_KEYS = new Set([
+  '_', 'c', 'l', 'r', 't', 'o', 'pix',
+  'position', 'position.hg19', 'oldPosition', 'lastPosition',
+  'lastVirtModeExtra', 'lastVirtModeExtraState', 'lastVirtModeType',
+  'virtMode', 'virtModeType',
+  'goButton', 'hgsid', 'hgFind.matches', 'cjCmd',
+  'enableHighlightingDialog', 'highlight', 'prevHlColor',
+  'hgS_loadUrlName', 'hgS_otherUserName', 'hgS_otherUserSessionName',
+  'hgS_saveLocalFileCompress', 'hgS_saveLocalFileName',
+  'search', 'wp_append', 'wp_flipReverse', 'wp_good', 'wp_perfect',
+  'wp_size', 'wp_target',
+  'db' // 自分で db=hg19 を付ける
+]);
+function parseUcscSession(text) {
+  const params = [];
+  text.split(/\r?\n/).forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    const idx = line.indexOf(' ');
+    if (idx < 0) return;
+    const key = line.slice(0, idx);
+    const value = line.slice(idx + 1);
+    if (UCSC_SKIP_KEYS.has(key)) return;
+    params.push([key, value]);
+  });
+  return params;
+}
+const UCSC_SESSION_PARAMS = parseUcscSession(
+  document.getElementById('ucsc-session-masa').textContent
+);
+console.log(`[BED QR Viewer] UCSC session 'masa': ${UCSC_SESSION_PARAMS.length} params loaded`);
+document.getElementById('sessionLabel').textContent =
+  `masa (${UCSC_SESSION_PARAMS.length} params)`;
+
+// ----- Tabs -----
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', async () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    // カメラタブを開いたら自動でスキャン開始 / 離れたら停止
+    if (tab.dataset.tab === 'camera') {
+      if (typeof startCamera === 'function') startCamera();
+    } else {
+      if (typeof stopCamera === 'function') await stopCamera();
+    }
+  });
+});
+
+// ----- Status -----
+function setStatus(msg, kind) {
+  const el = document.getElementById('status');
+  if (!msg) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="status ${kind || 'ok'}">${msg}</div>`;
+}
+
+// ----- BED parser -----
+function parseBED(text) {
+  const regions = [];
+  const errors = [];
+  const lines = text.split(/\r?\n/);
+  lines.forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line) return;
+    if (line.startsWith('#') || line.startsWith('track') || line.startsWith('browser')) return;
+    const parts = line.split(/[\t ]+/);
+    if (parts.length < 3) {
+      errors.push(`行 ${i + 1}: 列数不足 (${parts.length})`);
+      return;
+    }
+    let chrom = parts[0];
+    if (!chrom.startsWith('chr')) chrom = 'chr' + chrom;
+    const start0 = parseInt(parts[1], 10);
+    const end1 = parseInt(parts[2], 10);
+    if (!Number.isFinite(start0) || !Number.isFinite(end1)) {
+      errors.push(`行 ${i + 1}: 座標が数値でない`);
+      return;
+    }
+    const name = parts[3] || '';
+    regions.push({
+      chrom,
+      start0,            // 0-based BED start
+      end1,              // 1-based-equivalent end (= half-open)
+      start1: start0 + 1, // 1-based display start
+      name,
+      raw: line
+    });
+  });
+  return { regions, errors };
+}
+
+// ----- URL builders (GRCh37) -----
+function ucscURL(r) {
+  let url = `https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg19&position=${r.chrom}%3A${r.start1}-${r.end1}`;
+  for (const [k, v] of UCSC_SESSION_PARAMS) {
+    url += `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`;
+  }
+  return url;
+}
+function clingenURL(r) {
+  // GRCh37 の座標文字列で検索 (例: chr2:192983875-200455593)
+  const query = `${r.chrom}:${r.start1}-${r.end1}`;
+  return `https://search.clinicalgenome.org/kb/gene-dosage?page=1&size=25&search=${encodeURIComponent(query)}`;
+}
+function decipherURL(r) {
+  const c = r.chrom.replace(/^chr/, '');
+  return `https://www.deciphergenomics.org/browser#q/grch37:${c}:${r.start1}-${r.end1}`;
+}
+
+// ----- Render -----
+let currentRegions = [];
+
+function renderResults(regions) {
+  currentRegions = regions;
+  const body = document.getElementById('resultsBody');
+  const meta = document.getElementById('meta');
+  const openBar = document.getElementById('openallBar');
+
+  if (!regions.length) {
+    body.innerHTML = '<div class="empty">リージョンがありません。</div>';
+    meta.textContent = '未読み込み';
+    openBar.style.display = 'none';
+    return;
+  }
+
+  meta.textContent = `${regions.length} 件のリージョン (GRCh37)`;
+  openBar.style.display = 'flex';
+
+  let html = `<div style="overflow-x:auto;"><table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Chrom</th>
+        <th>Start (1-based)</th>
+        <th>End</th>
+        <th>Size (bp)</th>
+        <th>Name</th>
+        <th>Links</th>
+      </tr>
+    </thead><tbody>`;
+  regions.forEach((r, i) => {
+    const size = r.end1 - r.start0;
+    html += `<tr>
+      <td>${i + 1}</td>
+      <td class="coord">${r.chrom}</td>
+      <td class="coord">${r.start1.toLocaleString()}</td>
+      <td class="coord">${r.end1.toLocaleString()}</td>
+      <td class="size">${size.toLocaleString()}</td>
+      <td class="name">${r.name || '<span style="color:var(--muted);">—</span>'}</td>
+      <td>
+        <a class="link-btn ucsc" href="${ucscURL(r)}" target="_blank" rel="noopener">UCSC</a>
+        <a class="link-btn clingen" href="${clingenURL(r)}" target="_blank" rel="noopener">ClinGen</a>
+        <a class="link-btn decipher" href="${decipherURL(r)}" target="_blank" rel="noopener">DECIPHER</a>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table></div>';
+  body.innerHTML = html;
+}
+
+function openInNewTab(url) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+document.querySelectorAll('[data-openall]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const which = btn.dataset.openall;
+    if (!currentRegions.length) {
+      setStatus('リージョンが読み込まれていません', 'warn');
+      return;
+    }
+    let opened = 0, skipped = 0;
+    currentRegions.forEach(r => {
+      let url = null;
+      if (which === 'ucsc') url = ucscURL(r);
+      else if (which === 'clingen') url = clingenURL(r);
+      else if (which === 'decipher') url = decipherURL(r);
+      if (url) { openInNewTab(url); opened++; }
+      else skipped++;
+    });
+    const label = { ucsc: 'UCSC', clingen: 'ClinGen', decipher: 'DECIPHER' }[which];
+    let msg = `✓ ${label} を ${opened} タブ開きました`;
+    if (skipped) msg += `（${skipped} 件は対応URL無しでスキップ）`;
+    msg += '。 タブが開かない場合はブラウザのポップアップブロックを許可してください。';
+    setStatus(msg, opened ? 'ok' : 'warn');
+  });
+});
+
+document.getElementById('btnClear').addEventListener('click', () => {
+  renderResults([]);
+  setStatus('');
+});
+
+// ----- Process input -----
+function processBEDText(text, source) {
+  const { regions, errors } = parseBED(text);
+  if (!regions.length) {
+    setStatus(`BEDとして有効な行が見つかりません。${errors.length ? ' / ' + errors.join('; ') : ''}`, 'err');
+    renderResults([]);
+    return;
+  }
+  let msg = `✓ ${source} から ${regions.length} 件のリージョンを読み込みました`;
+  if (errors.length) msg += `（警告: ${errors.length} 行スキップ）`;
+  setStatus(msg, errors.length ? 'warn' : 'ok');
+  renderResults(regions);
+}
+
+// ----- Manual text -----
+document.getElementById('btnParseText').addEventListener('click', () => {
+  const text = document.getElementById('bedText').value;
+  if (!text.trim()) { setStatus('テキストを入力してください', 'warn'); return; }
+  processBEDText(text, 'テキスト入力');
+});
+document.getElementById('btnSample').addEventListener('click', () => {
+  document.getElementById('bedText').value =
+    `chr2\t192983874\t200455593\tSATB2_REGION
+chr7\t117120016\t117308718\tCFTR
+chr17\t41196311\t41277500\tBRCA1
+chr22\t19000000\t21500000\tDIGEORGE_22Q11`;
+});
+
+// ----- QR camera -----
+let qrScanner = null;
+const qrRegionId = 'qr-reader';
+const QR_CONFIG = { fps: 10, qrbox: { width: 260, height: 260 } };
+
+function isCameraScanning() {
+  return qrScanner && qrScanner.getState && qrScanner.getState() === 2;
+}
+function isSecureForCamera() {
+  return window.isSecureContext
+      || location.hostname === 'localhost'
+      || location.hostname === '127.0.0.1';
+}
+
+function onScanSuccess(decoded) {
+  stopCamera().finally(() => processBEDText(decoded, 'QR (カメラ)'));
+}
+
+async function startCamera() {
+  if (isCameraScanning()) return;
+  if (!isSecureForCamera()) {
+    setStatus(
+      'カメラ機能には HTTPS または localhost が必要です。<br>' +
+      '<code>cd bed_qr_viewer && python3 -m http.server 8000</code> を実行し ' +
+      '<a href="http://localhost:8000" style="color:var(--accent);">http://localhost:8000</a> を開いてください。',
+      'err'
+    );
+    return;
+  }
+  try {
+    if (!qrScanner) qrScanner = new Html5Qrcode(qrRegionId);
+    setStatus('カメラ起動中...', 'ok');
+
+    // フォールバックチェーン: 背面カメラ→任意の背面→前面→最初に見つかったデバイス
+    const attempts = [
+      { facingMode: { exact: 'environment' } },
+      { facingMode: 'environment' },
+      { facingMode: 'user' }
+    ];
+    let lastErr = null;
+    for (const camCfg of attempts) {
+      try {
+        await qrScanner.start(camCfg, QR_CONFIG, onScanSuccess, () => {});
+        setStatus('📷 スキャン中... QRコードをかざしてください', 'ok');
+        return;
+      } catch (e) { lastErr = e; }
+    }
+    // facingMode がどれもダメな場合はデバイスIDで再試行
+    const cams = await Html5Qrcode.getCameras();
+    if (cams && cams.length) {
+      await qrScanner.start(cams[0].id, QR_CONFIG, onScanSuccess, () => {});
+      setStatus(`📷 スキャン中 (${cams[0].label || 'camera 0'})... QRをかざしてください`, 'ok');
+      return;
+    }
+    throw lastErr || new Error('利用可能なカメラがありません');
+  } catch (e) {
+    setStatus('カメラ起動失敗: ' + (e.message || e) + ' / ブラウザのカメラ権限を確認してください', 'err');
+  }
+}
+
+async function stopCamera() {
+  if (isCameraScanning()) {
+    try { await qrScanner.stop(); } catch (e) {}
+  }
+}
+
+document.getElementById('btnStartCam').addEventListener('click', startCamera);
+document.getElementById('btnStopCam').addEventListener('click', async () => {
+  await stopCamera();
+  setStatus('スキャンを停止しました', 'warn');
+});
+
+// ----- QR from image file -----
+document.getElementById('fileImg').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const scanner = new Html5Qrcode(qrRegionId);
+    const decoded = await scanner.scanFile(file, true);
+    processBEDText(decoded, 'QR (画像)');
+  } catch (err) {
+    setStatus('画像からQRをデコードできませんでした: ' + (err.message || err), 'err');
+  }
+});
+</script>
+</body>
+</html>
